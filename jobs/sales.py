@@ -19,7 +19,7 @@ logger = logging.getLogger('py4j')
 sys.path.insert(0, project_dir)
 from classes import class_pyspark
 
-def main(project_dir: str):
+def main(project_dir) -> None:
     """ Starts Spark Job"""
     conf = openConfig(f"{project_dir}/json/sales.json")
     spark = sparkStart(conf) 
@@ -31,7 +31,7 @@ def main(project_dir: str):
     
     # Transform Data
     start = datetime.datetime.now()
-    transformDF(spark, transactionsDF, customersDF, productsDF)
+    transformDF(spark, transactionsDF, customersDF, productsDF, f"{project_dir}/test-delta/sales")
     print(f"Time taken : {datetime.datetime.now() - start}")
     
     # Stopping Spark Session
@@ -57,12 +57,25 @@ def showMySchema(df: DataFrame, filename: str) -> None:
     if isinstance(df, DataFrame):
         class_pyspark.SparkClass(config={}).debugDF(df, filename)
 
-def transformDF(spark: SparkSession, transactionsDF: DataFrame, customersDF: DataFrame, productsDF: DataFrame) -> DataFrame:
-    tdf = cleanTransactions(transactionsDF)
-    cdf = cleanCustomer(customersDF)
-    showMySchema(tdf, "transactionsDF")
-    showMySchema(cdf, "customersDF")
-    showMySchema(productsDF, "productsDF")
+def transformDF(spark: SparkSession, transactionsDF: DataFrame, customersDF: DataFrame, productsDF: DataFrame, path:str) -> DataFrame:
+    
+    createTempTables(spark,[(cleanTransactions(transactionsDF),"transactionDF"),
+                        (cleanCustomer(customersDF),"customerDF"),
+                        (cleanProducts(productsDF),"productDF")])
+    
+    # exportResult(spark,[(cleanTransactions(transactionsDF),"transactionDF"),
+    #                     (cleanCustomer(customersDF),"customerDF"),
+    #                     (cleanProducts(productsDF),"productDF")])
+
+    exportResult([(spark, cleanTransactions(transactionsDF), {"format":"delta","path":f"{path}/transactions", "key":"date_of_purchase"}),
+                    (spark, cleanCustomer(customersDF),{"format":"delta","path":f"{path}/customers","key":"customer_id"}),
+                    (spark, cleanProducts(productsDF),{"format":"delta","path":f"{path}/products","key":"product_id"})])
+    
+    # createHiveTables(spark,[(cleanTransactions(transactionsDF),"transactionDF"),
+    #                     (cleanCustomer(customersDF),"customerDF"),
+    #                     (cleanProducts(productsDF),"productDF")])
+    # pdf = cleanProducts(productsDF)
+    # showMySchema(productsDF, "productsDF")
 
 def cleanTransactions(df: DataFrame) -> DataFrame:
     if isinstance(df, DataFrame):
@@ -71,14 +84,38 @@ def cleanTransactions(df: DataFrame) -> DataFrame:
         df2 = (df1.select(["customer_id","date_of_purchase","basket_explode.*"])
                 .withColumn("date", col("date_of_purchase").cast("Date"))
                 .withColumn("price",col("price").cast("Integer")))
-        # df2.printSchema()
+        showMySchema(df2,"transactions")
         return df2
 
 def cleanCustomer(df: DataFrame) -> DataFrame:
     if isinstance(df, DataFrame):
         df1 = df.withColumn("loyalty_score", col("loyalty_score").cast("Integer"))  
-        # df1.printSchema()
+        showMySchema(df1,"customers")
         return df1
+
+def cleanProducts(df: DataFrame) -> DataFrame:
+    if isinstance(df, DataFrame):
+        # df1 = df.withColumn("loyalty_score", col("loyalty_score").cast("Integer"))  
+        showMySchema(df,"products")
+        return df
+
+def createTempTables(spark: SparkSession, listOfDF: list)-> None:
+    # class_pyspark.SparkClass(config={}).createTempTables(listOfDF)
+    # temp = [(lambda x: class_pyspark.SparkClass(config={}).createTempTables(x))(x) for x in listOfDF]
+    temp = [class_pyspark.SparkClass(config={}).createTempTables(x) for x in listOfDF]
+    tb = [class_pyspark.SparkClass(config={}).debugTables(x) for x in spark.catalog.listTables()]
+    # print(spark.catalog.listTables())
+
+def createHiveTables(spark: SparkSession, listOfDF:list) -> None: 
+    # class_pyspark.SparkClass(config={}).createHiveTables(listOfDF)
+    temp = [class_pyspark.SparkClass(config={}).createHiveTables(x) for x in listOfDF]
+    print(spark.catalog.listTables())
+
+def exportResult(listOfDF:list) -> None: 
+    # class_pyspark.SparkClass(config={}).createHiveTables(listOfDF)
+    # temp = [class_pyspark.SparkClass(config={"export":"/tmp/spark/delta1"}).exportDF(x) for x in listOfDF]
+    temp = [class_pyspark.SparkClass(config={}).exportDF(x) for x in listOfDF]
+    # print(spark.catalog.listTables())
 
 if __name__ == "__main__":
     main(project_dir)
