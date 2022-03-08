@@ -59,18 +59,26 @@ def showMySchema(df: DataFrame, filename: str) -> None:
 
 def transformDF(spark: SparkSession, transactionsDF: DataFrame, customersDF: DataFrame, productsDF: DataFrame, path:str) -> DataFrame:
     
+    # create temp tables in default spark sql 
     createTempTables(spark,[(cleanTransactions(transactionsDF),"transactionDF"),
                         (cleanCustomer(customersDF),"customerDF"),
                         (cleanProducts(productsDF),"productDF")])
     
-    # exportResult(spark,[(cleanTransactions(transactionsDF),"transactionDF"),
-    #                     (cleanCustomer(customersDF),"customerDF"),
-    #                     (cleanProducts(productsDF),"productDF")])
-
+    # Create table in deltalake
     exportResult([(spark, cleanTransactions(transactionsDF), {"format":"delta","path":f"{path}/transactions", "key":"date_of_purchase"}),
                     (spark, cleanCustomer(customersDF),{"format":"delta","path":f"{path}/customers","key":"customer_id"}),
                     (spark, cleanProducts(productsDF),{"format":"delta","path":f"{path}/products","key":"product_id"})])
-    
+
+    # load tables    
+    l = loadDeltaTables([(spark, f"{path}/transactions","delta"),
+                        (spark,f"{path}/customers","delta"),
+                        (spark,f"{path}/products","delta")])
+
+    listOfDF = list(zip(l,["transactions","customers","products"]))
+    print(f"\033[96m Table Details \n:{listOfDF}\033[0m")
+    createTempTables(spark, listOfDF)
+    df = spark.sql("SELECT * FROM transactions")
+    df.show()
     # createHiveTables(spark,[(cleanTransactions(transactionsDF),"transactionDF"),
     #                     (cleanCustomer(customersDF),"customerDF"),
     #                     (cleanProducts(productsDF),"productDF")])
@@ -112,10 +120,14 @@ def createHiveTables(spark: SparkSession, listOfDF:list) -> None:
     print(spark.catalog.listTables())
 
 def exportResult(listOfDF:list) -> None: 
-    # class_pyspark.SparkClass(config={}).createHiveTables(listOfDF)
     # temp = [class_pyspark.SparkClass(config={"export":"/tmp/spark/delta1"}).exportDF(x) for x in listOfDF]
     temp = [class_pyspark.SparkClass(config={}).exportDF(x) for x in listOfDF]
     # print(spark.catalog.listTables())
+
+def loadDeltaTables(listOfPaths:list) -> list: 
+    # print(f"\033[96m New Table : {listOfPaths}\033[0m")
+    temp = [class_pyspark.SparkClass(config={}).loadTables(x[0],x[1],x[2]) for x in listOfPaths]
+    return temp
 
 if __name__ == "__main__":
     main(project_dir)

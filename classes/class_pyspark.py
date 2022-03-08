@@ -2,6 +2,7 @@
 from copyreg import remove_extension
 from distutils import filelist
 from distutils.util import execute
+from importlib.resources import path
 import itertools
 import json, os, re, sys
 from optparse import Option
@@ -54,7 +55,7 @@ class SparkClass:
         def getSetting(spark: SparkSession, config_path:tuple):
             # Get spark setting
             # print(f"\033[1;33m{spark}\033[0m")
-            # print(f"\033[96m{spark.sparkContext.getConf().getAll()}\033[0m")
+            print(f"\033[96m{spark.sparkContext.getConf().getAll()}\033[0m")
             c = {}
             c['spark.version'] = spark.version
             c['spark.SparkContext'] = spark.sparkContext.getConf().getAll()
@@ -63,8 +64,8 @@ class SparkClass:
 
         builder = createBuilder(MASTER, APP_NAME, CONFIG)
         spark = createSession(builder)
-        # setLogging(spark, LOG_LEVEL)
-        # getSetting(spark, self.config_path)
+        setLogging(spark, LOG_LEVEL)
+        getSetting(spark, self.config_path)
         return spark
 
     def openJson(self, filepath: str) -> dict:
@@ -105,7 +106,16 @@ class SparkClass:
     def createTempTables(self,tupleDF:tuple):
         if isinstance(tupleDF,tuple) and len(tupleDF)==2:
             tupleDF[0].createOrReplaceTempView(tupleDF[1])
-
+    
+    def loadTables(self, spark: SparkSession, path: str, format: str) -> DataFrame:
+        # listOfPaths - Spark, Path and Format
+        # print(f"\033[98m{path}\033[0m")
+        if os.path.exists(path):
+            df = (spark.read.format(format)
+                        .option("mergeSchema","true")
+                        .load(path))
+            return df
+        
     def exportDF(self,tupleDF:tuple):
         # print(tupleDF[0],"->", tupleDF[1],"\n")
         # if isinstance(tupleDF,tuple) and len(tupleDF)==2 and self.config.get("export"):
@@ -115,7 +125,7 @@ class SparkClass:
         def loopSession(sessionList: list, pattern: str) -> list:
             if isinstance(sessionList, list):
                 result = [[x for x in linelist if matchPattern(x, pattern)] for linelist in sessionList]
-                pkgs = set(list(itertools.chain.from_iterable(result))                )
+                pkgs = set(list(itertools.chain.from_iterable(result)))
                 # result = [[print(type(x),"->", x ,"->" ,pattern) for x in linelist] for linelist in sessionList]
                 # print(f"\033[98m{pkgs}\033[0m")
                 return True if len(pkgs) > 0 else False
@@ -131,7 +141,6 @@ class SparkClass:
             return loopSession(sessionList, pattern)
             # return print("Dependency Resolved") if val else print("Dependent Package Not Present")
             
-
         def writeExport(tupleDF:tuple) -> None:
             if isinstance(tupleDF, tuple) and len(tupleDF) > 0:
                 # print(f"\033[98m{tupleDF}\033[0m")
